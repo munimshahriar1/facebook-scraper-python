@@ -1,280 +1,197 @@
-import csv
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[14]:
+
+
 import time
+start_time = time.time()
+
+
+# In[15]:
+
+
 from selenium import webdriver
-from selenium.webdriver import Keys
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.options import Options
-import os.path
-
-option = Options()
-option.add_argument("--disable-infobars")
-option.add_argument("--disable-extensions")
-# Pass the argument 1 to allow and 2 to block
-option.add_experimental_option("prefs", {
-    "profile.default_content_setting_values.notifications": 1
-})
-
-email = ""
-password = ""
-i = 1
-with open('login.csv', 'r') as file:
-    reader = csv.reader(file)
-    for row in reader:
-        if i == 1:
-            i = i + 1
-            continue
-        email = row[0]
-        password = row[1]
-        break
-
-list = []
-i = 1
-with open('queries.csv', 'r') as file:
-    reader = csv.reader(file)
-    for row in reader:
-        if i == 1:
-            i = i + 1
-            continue
-        query = row[0]
-        location = row[1]
-        list.append({"query": query, "location": location})
+import csv
+import pandas as pd
+from bs4 import BeautifulSoup as bs4
+import re
 
 
-def openFacebook(driver):
-    url = "https://www.facebook.com"
+# In[16]:
+
+
+chrome_options = webdriver.ChromeOptions()
+# chrome_options.headless = True
+prefs = {"profile.default_content_setting_values.notifications" : 2}
+chrome_options.add_experimental_option("prefs",prefs)
+driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
+
+
+# In[17]:
+
+
+# Saving Query Data from csv to list
+def savingQueryData(csvFile):
+    queryDataCsv= pd.read_csv(csvFile)
+    queryList = [i for i in queryDataCsv["query"]]
+    locationList = [i for i in queryDataCsv["location"]]
+    return queryList, locationList
+    
+def savingLoginData(csvFile):
+    loginDataCsv = pd.read_csv(csvFile)
+    emailList = [i for i in loginDataCsv["email"]]
+    passwordList = [i for i in loginDataCsv["password"]]
+    return emailList, passwordList
+
+# Return searchable facebook url
+def facebook_search_url(queryList, locationList):
+    search_url_list = []
+    for j in range(len(queryList)):
+        splitQuery = queryList[j].split(" ")
+        splitLocation = locationList[j].split(" ")
+
+        searchUrl = "https://www.facebook.com/search/pages/?q="
+        for i in splitQuery:
+            searchUrl = searchUrl + i + "%20"
+        for i in splitLocation:
+            searchUrl = searchUrl + i + "%20"
+        search_url_list.append(searchUrl)
+    return search_url_list
+
+queryList, locationList = savingQueryData("queries.csv")
+search_url_list = facebook_search_url(queryList, locationList)
+
+# search_url_list
+
+
+# In[18]:
+
+
+def generalInfo_aboutPage():
+    soup = bs4(driver.page_source, "html.parser")
+    list_info = soup.find_all("div", class_="je60u5p8")
+
+    info = ""
+    for idx, j in enumerate(list_info):
+        for i in list_info[idx].findAll("span"):
+            if not i.text in info:
+                info = info + i.text + " "
+        info = info.replace("General", "")
+    return info
+
+def collectURL(string):
+    # findall() has been used 
+    # with valid conditions for urls in string
+    regex = r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
+    url = re.findall(regex,string)      
+    return [x[0] for x in url]
+
+def collectEMAIL(string):
+    match = re.findall(r'[\w.+-]+@[\w-]+\.[\w.-]+', string)
+    return match
+def collectPHONE(string):
+    match = re.findall(r'(\d{3}[-\.\s]??\d{3}[-\.\s]??\d{4}|\(\d{3}\)\s*\d{3}[-\.\s]??\d{4}|\d{3}[-\.\s]??\d{4})', string)
+    return match
+
+def mainScraper():
+    #Html of about page
+    html = driver.page_source
+    soup = bs4(html, "html.parser")
+    target_listing = soup.find_all("div", class_="sjgh65i0")
+
+    master_list = []
+    for idx,i in enumerate(target_listing):
+    # Single Listing
+        data_dict={}
+        try:
+            page_name = i.a["aria-label"]
+            facebook_link = i.a["href"]
+            data_dict["Page Name"] = page_name
+            data_dict["Facebook Link"] = facebook_link
+            facebook_link_aboutPage = facebook_link.replace("?__tn__=%3C", "about")
+            if not "/about" in facebook_link_aboutPage:
+                facebook_link_aboutPage = facebook_link_aboutPage.replace("about", "/about")
+            print(facebook_link_aboutPage, "\n")
+            if "facebook.com" in facebook_link_aboutPage:
+                driver.get(facebook_link_aboutPage)
+            time.sleep(5)
+            #Accessing each lead's about page
+            data_dict["Url"] = "".join(collectURL(generalInfo_aboutPage()))
+            data_dict["Email"] = "".join(collectEMAIL(generalInfo_aboutPage()))
+            data_dict["Phone Numer"] = "".join(collectPHONE(generalInfo_aboutPage()))
+            data_dict["General Information"] = generalInfo_aboutPage()
+        except:
+            print("Error")
+        master_list.append(data_dict)
+        time.sleep(5)
+        print(f"Percentage done: {idx/len(target_listing)*100}%")
+    df = pd.DataFrame(master_list)
+    return df
+    
+
+
+# In[19]:
+
+
+emailList, passwordList = savingLoginData("login.csv")
+
+driver.get("https://www.facebook.com")
+username = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[name='email']")))
+password = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[name='pass']")))
+
+username.clear()
+username.send_keys(emailList[0])
+password.clear()
+password.send_keys(passwordList[0])
+
+#target the login button and click it
+button = WebDriverWait(driver, 2).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))).click()
+
+
+# In[ ]:
+
+
+time.sleep(5)
+for idx,url in enumerate(search_url_list):
     driver.get(url)
+    time.sleep(2)
+    for i in range(20):
+        time.sleep(2)
+        driver.execute_script("window.scrollTo(0,document.body.scrollHeight)") 
+#     TODO: Solution for House Canda Sraping - Posts/Pages/Group ?
+    time.sleep(2)
+    df = mainScraper()
+    queryList, locationList = savingQueryData("queries.csv")
+    df.to_csv(f"{queryList[idx]} {locationList[idx]}.csv")
+    break
 
 
-def checkExit(file_name):
-    return os.path.exists(file_name)
+# In[140]:
 
 
-def getLastPage(file_name):
-    with open(file_name, "r", encoding="utf-8", errors="ignore") as scraped:
-         final_line = scraped.readlines()[-1]
-         return final_line
+driver.quit()
 
 
-def login(driver):
-    inputs = driver.find_elements(By.CLASS_NAME, "inputtext")
-    # get Email
-    emailInput = inputs[0]
-    # get Password
-    passwordInput = inputs[1]
-
-    # send Values
-    emailInput.send_keys(email)
-    passwordInput.send_keys(password)
-
-    # get Button Login
-    loginButton = driver.find_element(By.TAG_NAME, "button")
-    loginButton.click()
+# In[141]:
 
 
-def openSearchPage(driver, query: str):
-    time.sleep(5)
-    url = "https://www.facebook.com/search/pages?q=" + query
-    driver.get(url)
+print("Time Taken",  (time.time() - start_time)/60, " min")
 
 
-def applyLocation(driver, location: str):
-    time.sleep(5)
-    divLocation = driver.find_elements(By.TAG_NAME, "span")[58]
-    divLocation.click()
-
-    inputLocation = driver.find_elements(By.CSS_SELECTOR, "input[type='search']")[1]
-    inputLocation.click()
-    inputLocation.send_keys(location)
-    time.sleep(4)
-    ulLocation = driver.find_elements(By.TAG_NAME, "ul")[1]
-    ulLocation.find_element(By.TAG_NAME, "li").click()
+# In[233]:
 
 
-def startScraping(driver,query):
-    listPages = []
-    q = query.replace(" ","-") + ".csv"
-    if (checkExit(q)):
-        lastLink = getLastPage(q)
-        lastLink = lastLink.split(",")[0].rstrip()
-        if lastLink == "finished":
-            return
-        listPages = getOldList(q)
-        print("last link ", lastLink)
-        print(listPages)
-    time.sleep(4)
-    driverPages = webdriver.Chrome(ChromeDriverManager().install(), options=option)
-    openFacebook(driverPages)
-    login(driverPages)
-    html = driver.find_element_by_tag_name('html')
-
-    finished = False
-    while not finished:
-        if "End of results" in html.text:
-            finished = True
-
-        for i in range(1, 15):
-            html.send_keys(Keys.END)
-
-        feed = driver.find_element(By.CSS_SELECTOR, "div[role='feed']")
-        pages = feed.find_elements(By.CSS_SELECTOR, "a[role='link']")
-        for page in pages:
-            mFb = page.get_attribute("href").replace("www", "m")
-            if mFb not in listPages:
-                listPages.append(mFb)
-                if mFb[-1] != "/":
-                    mFb = mFb + "/"
-                linkLikes = mFb + "community"
-                driverPages.get(linkLikes)
-                time.sleep(5)
-
-                likes = \
-                    driverPages.find_element(By.ID, "pages_msite_body_contents").find_element(By.TAG_NAME,
-                                                                                              "div").find_elements(
-                        By.TAG_NAME, "div")[1].find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME,
-                                                                                             "div").find_element(
-                        By.TAG_NAME, "div").find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME,
-                                                                                          "div").find_element(
-                        By.TAG_NAME, "div").text
-                print("likes : " + likes)
-                follow = \
-                    driverPages.find_element(By.ID, "pages_msite_body_contents").find_element(By.TAG_NAME,
-                                                                                              "div").find_elements(
-                        By.TAG_NAME, "div")[1].find_elements(By.TAG_NAME, "div")[9].text
-                print("follow : " + follow)
-
-                # linkInfo = mFb + "about"
-                driverPages.get(mFb)
-                time.sleep(5)
-                try:
-                    info = driverPages.find_element(By.ID, "pages_msite_body_contents")
-                except:
-                    continue
-                images = info.find_elements(By.TAG_NAME, "img")
-
-                listPhoneNumber = []
-                listEmail = []
-                listWebsites = []
-                listLoc = []
-                listInfo = []
-                rating = ""
-                checked = ""
-                open = ""
-                listInsta = []
-                listYoutube = []
-                listCat = []
-                for image in images:
-                    src = image.get_attribute("src")
-                    if src == "https://static.xx.fbcdn.net/rsrc.php/v3/yn/r/IIz7DmH3RfV.png":
-                        parent = image.find_element_by_xpath('..')
-                        phoneNumber = parent.find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME, "div").text
-                        listPhoneNumber.append(phoneNumber)
-                        print("phone number " + phoneNumber)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/yl/r/7wycyFqCurV.png":
-                        parent = image.find_element_by_xpath('..')
-                        em = parent.find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME, "div").text
-                        listEmail.append(em)
-                        print("email " + em)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/y5/r/ZWx4MakmUd4.png":
-                        parent = image.find_element_by_xpath('..')
-                        website = parent.find_element(By.TAG_NAME, "div").text
-                        listWebsites.append(website)
-                        print("website " + website)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/y8/r/PwUkFLBBA85.png":
-                        parent = image.find_element_by_xpath('..')
-                        location = parent.find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME,
-                                                                                        "div").find_element(
-                            By.TAG_NAME, "div").text
-                        listLoc.append(location)
-                        print("location " + location)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/yG/r/yzxwaDMdZAx.png":
-                        parent = image.find_element_by_xpath('..')
-                        information = parent.find_element(By.TAG_NAME, "div").text
-                        listInfo.append(information)
-                        print("information " + information)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/yD/r/qvZe07446FL.png":
-                        parent = image.find_element_by_xpath('..')
-                        rating = parent.find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME, "div").text
-                        print("rating " + rating)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/yt/r/GWGxn_Tx65X.png":
-                        parent = image.find_element_by_xpath('..')
-                        checked = parent.find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME, "div").text
-                        print("checked " + checked)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/yV/r/c-IOC1UqHiT.png":
-                        parent = image.find_element_by_xpath('..')
-                        open = parent.find_element(By.TAG_NAME, "div").find_elements(By.TAG_NAME, "div")[2].text
-                        print("checked " + open)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/ys/r/oEVThCLaFzH.png":
-                        parent = image.find_element_by_xpath('..')
-                        instagram = parent.find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME, "div").text
-                        listInsta.append(instagram)
-                        print("instagram " + instagram)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/y8/r/7MR5nSXB08u.png":
-                        parent = image.find_element_by_xpath('..')
-                        youtube = parent.find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME, "div").text
-                        listYoutube.append(youtube)
-                        print("youtube " + youtube)
-
-                    elif src == "https://static.xx.fbcdn.net/rsrc.php/v3/yV/r/_6QbEglrVsx.png":
-                        parent = image.find_element_by_xpath('..')
-                        cat = parent.find_element(By.TAG_NAME, "div").find_element(By.TAG_NAME, "div").find_element(
-                            By.TAG_NAME,
-                            "span").find_element(
-                            By.TAG_NAME, "span").find_element(By.TAG_NAME, "span").text
-                        listCat.append(cat)
-                        print("category " + cat)
+# df
 
 
-                phoneNumber = " ".join(listPhoneNumber)
-                insta = " ".join(listInsta)
-                email = " ".join(listEmail)
-                website = " ".join(listWebsites)
-                info = " ".join(listInfo)
-                loc = " ".join(listLoc)
-                youtube = " ".join(listYoutube)
-                cat = " ".join(listCat)
-
-                facebookPage = page.get_attribute("href")
-
-                data = [ facebookPage , likes , follow , phoneNumber ,  insta ,  email , website ,  info ,
-                         loc , youtube , cat , rating ,  checked ,  open ]
-                saveInfo(q,data)
-
-                print("********************************************************")
-                # print(info.text)
-                time.sleep(5)
+# In[ ]:
 
 
-def saveInfo(file_name, data):
-    with open(file_name, 'a') as f:
-        writer = csv.writer(f, delimiter=",")
-        writer.writerow(data)
 
 
-def getOldList(file_name):
-    listPages = []
-    with open(file_name, 'r') as f:
-        r = csv.reader(f)
-        for ro in r:
-            link = ro[0]
-            link = link.replace("www", "m")
-            listPages.append(link)
-        return listPages
-
-driver = webdriver.Chrome(ChromeDriverManager().install(), options=option)
-openFacebook(driver)
-# login facebook
-login(driver)
-for row in list:
-    openSearchPage(driver, row.get("query"))
-    applyLocation(driver, row.get("location"))
-    startScraping(driver,row.get("query"))
