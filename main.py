@@ -161,8 +161,8 @@ time.sleep(5)
 for idx,url in enumerate(search_url_list):
     driver.get(url)
     time.sleep(2)
-    for i in range(20):
-        time.sleep(2)
+    for i in range(30):
+        time.sleep(3)
         driver.execute_script("window.scrollTo(0,document.body.scrollHeight)") 
 #     TODO: Solution for House Canda Sraping - Posts/Pages/Group ?
     time.sleep(2)
