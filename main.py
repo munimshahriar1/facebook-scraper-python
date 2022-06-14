@@ -161,11 +161,29 @@ time.sleep(5)
 for idx,url in enumerate(search_url_list):
     driver.get(url)
     time.sleep(2)
-    for i in range(30):
-        time.sleep(3)
-        driver.execute_script("window.scrollTo(0,document.body.scrollHeight)") 
+#     for i in range(30):
+#         time.sleep(3)
+#         driver.execute_script("window.scrollTo(0,document.body.scrollHeight)") 
 #     TODO: Solution for House Canda Sraping - Posts/Pages/Group ?
-    time.sleep(2)
+#     time.sleep(2)
+    SCROLL_PAUSE_TIME = 2
+
+    # Get scroll height
+    last_height = driver.execute_script("return document.body.scrollHeight")
+
+    while True:
+        # Scroll down to bottom
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+        # Wait to load page
+        time.sleep(SCROLL_PAUSE_TIME)
+
+        # Calculate new scroll height and compare with last scroll height
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            break
+        last_height = new_height
+
     df = mainScraper()
     queryList, locationList = savingQueryData("queries.csv")
     df.to_csv(f"{queryList[idx]} {locationList[idx]}.csv")
