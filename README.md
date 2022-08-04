@@ -2,13 +2,6 @@
 # What is this repo ?
 This script is designed to scrape Facebook
 
-
-# Dependencies: 
-- pandas
-- BeautifulSoup
-- selenium
-- regex
-
 # How to install ?
 
 Step 1: Install the dependencies using the following command - 
@@ -23,5 +16,4 @@ pip install -r requirements.txt
 ```
 python main.py
 ```
-3. Press 'Q' or 'q' to stop.
 
